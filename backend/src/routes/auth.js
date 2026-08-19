@@ -8,8 +8,13 @@ const router = Router();
 
 const otpStore = new Map();
 
+/*
+ * Gmail SMTP configuration
+ */
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -20,7 +25,9 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// SEND OTP
+/*
+ * SEND OTP
+ */
 router.post('/send-otp', async (req, res) => {
   try {
     const { name, email, phone } = req.body;
@@ -50,7 +57,7 @@ router.post('/send-otp', async (req, res) => {
 
     console.log(`[auth] OTP sent to ${email}`);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'OTP sent successfully.',
     });
@@ -58,14 +65,16 @@ router.post('/send-otp', async (req, res) => {
   } catch (error) {
     console.error('[auth] Send OTP error:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to send OTP.',
     });
   }
 });
 
-// VERIFY OTP
+/*
+ * VERIFY OTP
+ */
 router.post('/verify-otp', (req, res) => {
   try {
     const { email, phone, otp } = req.body;
@@ -109,7 +118,9 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    // Create/find the actual user
+    /*
+     * Create or find the actual user
+     */
     const user = createUser(
       stored.name,
       email,
@@ -118,7 +129,7 @@ router.post('/verify-otp', (req, res) => {
 
     otpStore.delete(email);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Login successful.',
       user: {
@@ -132,7 +143,7 @@ router.post('/verify-otp', (req, res) => {
   } catch (error) {
     console.error('[auth] Verify OTP error:', error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: 'Failed to verify OTP.',
     });
