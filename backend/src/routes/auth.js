@@ -1,12 +1,29 @@
 'use strict';
 
 const { Router } = require('express');
+const nodemailer = require('nodemailer');
 const { createUser } = require('../db');
 
 const router = Router();
 
 const otpStore = new Map();
 
+/*
+ * BREVO SMTP CONFIGURATION
+ */
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || 'smtp-relay.brevo.com',
+  port: Number(process.env.EMAIL_PORT) || 587,
+  secure: false,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+/*
+ * Generate 6-digit OTP
+ */
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -31,70 +48,72 @@ router.post('/send-otp', async (req, res) => {
 
     const otp = generateOTP();
 
-    // Store OTP for 5 minutes
+    /*
+     * Store OTP for 5 minutes
+     */
     otpStore.set(cleanEmail, {
       name: cleanName,
       phone: cleanPhone,
-      otp,
+      otp: otp,
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
 
     /*
-     * Send email using Resend API
+     * Send OTP through Brevo SMTP
      */
-    const resendResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: 'FinTrack <onboarding@resend.dev>',
-        to: [cleanEmail],
-        subject: 'FinTrack Login OTP',
-        html: `
-          <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>FinTrack Login Verification</h2>
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: cleanEmail,
+      subject: 'FinTrack Login OTP',
+      html: `
+        <div style="
+          font-family: Arial, sans-serif;
+          max-width: 600px;
+          margin: auto;
+          padding: 30px;
+          border: 1px solid #ddd;
+          border-radius: 12px;
+        ">
 
-            <p>Hello ${cleanName},</p>
+          <h2 style="color: #222;">
+            FinTrack Login Verification
+          </h2>
 
-            <p>Your FinTrack login OTP is:</p>
+          <p>Hello ${cleanName},</p>
 
-            <h1 style="letter-spacing: 6px;">
-              ${otp}
-            </h1>
+          <p>
+            Your FinTrack login OTP is:
+          </p>
 
-            <p>
-              This OTP is valid for <strong>5 minutes</strong>.
-            </p>
+          <h1 style="
+            letter-spacing: 8px;
+            font-size: 36px;
+          ">
+            ${otp}
+          </h1>
 
-            <p>
-              If you did not request this OTP, you can safely ignore this email.
-            </p>
+          <p>
+            This OTP is valid for
+            <strong>5 minutes</strong>.
+          </p>
 
-            <br>
+          <p>
+            If you did not request this OTP,
+            you can safely ignore this email.
+          </p>
 
-            <p>Regards,<br>FinTrack</p>
-          </div>
-        `,
-      }),
+          <br>
+
+          <p>
+            Regards,<br>
+            <strong>FinTrack</strong>
+          </p>
+
+        </div>
+      `,
     });
 
-    const resendData = await resendResponse.json();
-
-    if (!resendResponse.ok) {
-      console.error('[auth] Resend API error:', resendData);
-
-      // Remove OTP if email was not sent
-      otpStore.delete(cleanEmail);
-
-      return res.status(500).json({
-        success: false,
-        message: resendData.message || 'Failed to send OTP email.',
-      });
-    }
-
-    console.log(`[auth] OTP sent to ${cleanEmail}`);
+    console.log(`[auth] OTP sent successfully to ${cleanEmail}`);
 
     return res.json({
       success: true,
@@ -110,7 +129,6 @@ router.post('/send-otp', async (req, res) => {
     });
   }
 });
-
 
 /*
  * VERIFY OTP
@@ -128,9 +146,13 @@ router.post('/verify-otp', (req, res) => {
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPhone = phone.trim();
+    const cleanOTP = otp.trim();
 
     const stored = otpStore.get(cleanEmail);
 
+    /*
+     * OTP does not exist
+     */
     if (!stored) {
       return res.status(400).json({
         success: false,
@@ -138,7 +160,9 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    // Check expiration
+    /*
+     * OTP expired
+     */
     if (Date.now() > stored.expiresAt) {
       otpStore.delete(cleanEmail);
 
@@ -148,7 +172,9 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    // Check phone
+    /*
+     * Check phone number
+     */
     if (stored.phone !== cleanPhone) {
       return res.status(400).json({
         success: false,
@@ -156,8 +182,10 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    // Check OTP
-    if (stored.otp !== otp.trim()) {
+    /*
+     * Check OTP
+     */
+    if (stored.otp !== cleanOTP) {
       return res.status(400).json({
         success: false,
         message: 'Invalid OTP.',
@@ -165,7 +193,8 @@ router.post('/verify-otp', (req, res) => {
     }
 
     /*
-     * Create or find the actual user
+     * OTP is valid.
+     * Create/find the actual user.
      */
     const user = createUser(
       stored.name,
@@ -173,7 +202,9 @@ router.post('/verify-otp', (req, res) => {
       stored.phone
     );
 
-    // OTP can no longer be reused
+    /*
+     * Delete OTP so it cannot be reused.
+     */
     otpStore.delete(cleanEmail);
 
     return res.json({
@@ -196,6 +227,5 @@ router.post('/verify-otp', (req, res) => {
     });
   }
 });
-
 
 module.exports = router;
