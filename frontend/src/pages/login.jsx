@@ -32,21 +32,21 @@ function Login({ onLogin }) {
     setLoading(true);
     setMessage("");
 
-    try {
-      const response = await fetch(
-        "http://localhost:5000/api/auth/send-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: name.trim(),
-            email: email.trim(),
-            phone: phone.trim(),
-          }),
-        }
-      );
+  try {
+    const response = await fetch(
+      "https://personal-finance-management-production-7a21.up.railway.app/api/auth/send-otp",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+        }),
+      }
+    );
 
       const result = await response.json();
 
