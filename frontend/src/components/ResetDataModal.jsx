@@ -1,0 +1,4 @@
+function ResetDataModal({ onClose, onConfirm }) {
+  return <div className="modal-backdrop" role="presentation"><section className="transaction-modal reset-modal" role="dialog" aria-modal="true" aria-labelledby="reset-data-title"><div className="modal-header"><div><p className="modal-kicker">CLEAR DATA</p><h2 id="reset-data-title">Clear all your data?</h2></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close modal">×</button></div><p className="reset-copy">This will permanently delete all your transactions, budgets, and savings goals. This action cannot be undone.</p><div className="modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancel</button><button type="button" className="button button--danger" onClick={onConfirm}>Clear data</button></div></section></div>;
+}
+export default ResetDataModal;
