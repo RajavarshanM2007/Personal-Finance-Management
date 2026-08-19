@@ -1,0 +1,9 @@
+node_modules/
+.env
+*.db
+*.db-shm
+*.db-wal
+dist/
+build/
+frontend_backup/
+DEBUG_GUIDE.md
