@@ -1,42 +1,12 @@
 'use strict';
 
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+const { Router } = require('express');
+const { db } = require('../db');
 
-const { initDb, resetUserData } = require('./db');
+const router = Router();
 
-const transactionsRouter = require('./routes/transactions');
-const budgetsRouter = require('./routes/budgets');
-const goalsRouter = require('./routes/goals');
-const settingsRouter = require('./routes/settings');
-const authRouter = require('./routes/auth');
-
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-
-// Health check
-app.get('/api/health', (req, res) => {
-    res.json({
-        success: true,
-        message: 'FinTrack backend is running'
-    });
-});
-
-
-// Routes
-app.use('/api/transactions', transactionsRouter);
-app.use('/api/budgets', budgetsRouter);
-app.use('/api/goals', goalsRouter);
-app.use('/api/settings', settingsRouter);
-app.use('/api/auth', authRouter);
-
-
-// Reset logged-in user's data
-app.post('/api/reset', (req, res) => {
+// GET all goals for logged-in user
+router.get('/', (req, res) => {
     try {
         const user_id = req.headers['x-user-id'];
 
@@ -47,15 +17,20 @@ app.post('/api/reset', (req, res) => {
             });
         }
 
-        resetUserData(user_id);
+        const goals = db.prepare(`
+            SELECT *
+            FROM goals
+            WHERE user_id = ?
+            ORDER BY id ASC
+        `).all(user_id);
 
         res.json({
             success: true,
-            message: 'User data reset successfully.'
+            data: goals
         });
 
     } catch (error) {
-        console.error('[Reset Error]', error);
+        console.error('[Goals GET Error]', error);
 
         res.status(500).json({
             success: false,
@@ -65,30 +40,168 @@ app.post('/api/reset', (req, res) => {
 });
 
 
-// 404
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route not found'
-    });
+// ADD goal
+router.post('/', (req, res) => {
+    try {
+        const user_id = req.headers['x-user-id'];
+        const {
+            name,
+            current,
+            target,
+            targetDate,
+            color
+        } = req.body;
+
+        if (!user_id || !name || target === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID, name and target are required.'
+            });
+        }
+
+        const result = db.prepare(`
+            INSERT INTO goals
+            (user_id, name, current, target, targetDate, color)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+            user_id,
+            name,
+            current ?? 0,
+            target,
+            targetDate ?? '',
+            color ?? ''
+        );
+
+        const goal = db.prepare(`
+            SELECT *
+            FROM goals
+            WHERE id = ? AND user_id = ?
+        `).get(result.lastInsertRowid, user_id);
+
+        res.status(201).json({
+            success: true,
+            data: goal
+        });
+
+    } catch (error) {
+        console.error('[Goals POST Error]', error);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
 });
 
 
-// Error handler
-app.use((error, req, res, next) => {
-    console.error('[Error]', error);
+// UPDATE goal
+router.put('/:id', (req, res) => {
+    try {
+        const user_id = req.headers['x-user-id'];
+        const { id } = req.params;
 
-    res.status(500).json({
-        success: false,
-        message: error.message || 'Internal server error'
-    });
+        const {
+            name,
+            current,
+            target,
+            targetDate,
+            color
+        } = req.body;
+
+        if (!user_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required.'
+            });
+        }
+
+        const result = db.prepare(`
+            UPDATE goals
+            SET
+                name = ?,
+                current = ?,
+                target = ?,
+                targetDate = ?,
+                color = ?
+            WHERE id = ? AND user_id = ?
+        `).run(
+            name,
+            current ?? 0,
+            target,
+            targetDate ?? '',
+            color ?? '',
+            id,
+            user_id
+        );
+
+        if (result.changes === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Goal not found.'
+            });
+        }
+
+        const goal = db.prepare(`
+            SELECT *
+            FROM goals
+            WHERE id = ? AND user_id = ?
+        `).get(id, user_id);
+
+        res.json({
+            success: true,
+            data: goal
+        });
+
+    } catch (error) {
+        console.error('[Goals PUT Error]', error);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
 });
 
 
-const PORT = process.env.PORT || 5000;
+// DELETE goal
+router.delete('/:id', (req, res) => {
+    try {
+        const user_id = req.headers['x-user-id'];
+        const { id } = req.params;
 
-initDb();
+        if (!user_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'User ID is required.'
+            });
+        }
 
-app.listen(PORT, () => {
-    console.log(`FinTrack backend is running on port ${PORT}`);
+        const result = db.prepare(`
+            DELETE FROM goals
+            WHERE id = ? AND user_id = ?
+        `).run(id, user_id);
+
+        if (result.changes === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Goal not found.'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Goal deleted successfully.'
+        });
+
+    } catch (error) {
+        console.error('[Goals DELETE Error]', error);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
 });
+
+
+module.exports = router;

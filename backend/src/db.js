@@ -38,7 +38,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     category TEXT NOT NULL DEFAULT '',
-    limit REAL NOT NULL DEFAULT 0,
+    budget_limit REAL NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
