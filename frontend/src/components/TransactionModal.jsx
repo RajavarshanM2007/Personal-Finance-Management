@@ -1,0 +1,12 @@
+import { useState } from "react";
+
+const initialForm = { type: "Expense", category: "Food", amount: "", date: "2026-08-19", note: "", recurring: false };
+const categories = ["Food", "Transport", "Bills", "Shopping", "Health", "Entertainment", "Salary", "Freelance", "Other"];
+
+function TransactionModal({ onClose, onSave }) {
+  const [form, setForm] = useState(initialForm);
+  const update = (event) => { const { name, value, type, checked } = event.target; setForm((current) => ({ ...current, [name]: type === "checkbox" ? checked : value })); };
+  const submit = (event) => { event.preventDefault(); onSave({ ...form, amount: Number(form.amount) }); };
+  return <div className="modal-backdrop" role="presentation"><section className="transaction-modal" role="dialog" aria-modal="true" aria-labelledby="transaction-modal-title"><div className="modal-header"><div><p className="modal-kicker">NEW ENTRY</p><h2 id="transaction-modal-title">Add transaction</h2></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close modal">×</button></div><form onSubmit={submit}><div className="type-switch" aria-label="Transaction type">{["Expense", "Income"].map((type) => <label key={type}><input type="radio" name="type" value={type} checked={form.type === type} onChange={update} /><span>{type}</span></label>)}</div><div className="form-grid"><label className="form-field"><span>Category</span><select name="category" value={form.category} onChange={update}>{categories.map((category) => <option key={category}>{category}</option>)}</select></label><label className="form-field"><span>Amount</span><div className="amount-input"><span>₹</span><input type="number" min="1" step="1" name="amount" value={form.amount} onChange={update} placeholder="0" required /></div></label><label className="form-field"><span>Date</span><input type="date" name="date" value={form.date} onChange={update} required /></label><label className="form-field form-field--wide"><span>Note</span><input name="note" value={form.note} onChange={update} placeholder="e.g. Grocery run" required /></label></div><label className="checkbox-field"><input type="checkbox" name="recurring" checked={form.recurring} onChange={update} /><span>Make this a recurring transaction</span></label><div className="modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancel</button><button type="submit" className="button button--primary">Save transaction</button></div></form></section></div>;
+}
+export default TransactionModal;

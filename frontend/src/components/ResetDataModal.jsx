@@ -1,0 +1,4 @@
+function ResetDataModal({ onClose, onConfirm }) {
+  return <div className="modal-backdrop" role="presentation"><section className="transaction-modal reset-modal" role="dialog" aria-modal="true" aria-labelledby="reset-data-title"><div className="modal-header"><div><p className="modal-kicker">RESET DEMO DATA</p><h2 id="reset-data-title">Restore original data?</h2></div><button className="modal-close" type="button" onClick={onClose} aria-label="Close modal">×</button></div><p className="reset-copy">This will replace all current transactions, budgets, and savings goals with the original FinTrack demo data. This action cannot be undone.</p><div className="modal-actions"><button type="button" className="button button--secondary" onClick={onClose}>Cancel</button><button type="button" className="button button--danger" onClick={onConfirm}>Reset data</button></div></section></div>;
+}
+export default ResetDataModal;
