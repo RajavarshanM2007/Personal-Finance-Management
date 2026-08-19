@@ -1,25 +1,11 @@
 'use strict';
 
 const { Router } = require('express');
-const nodemailer = require('nodemailer');
 const { createUser } = require('../db');
 
 const router = Router();
 
 const otpStore = new Map();
-
-/*
- * Gmail SMTP configuration
- */
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -39,23 +25,76 @@ router.post('/send-otp', async (req, res) => {
       });
     }
 
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
+
     const otp = generateOTP();
 
-    otpStore.set(email, {
-      name,
-      phone,
+    // Store OTP for 5 minutes
+    otpStore.set(cleanEmail, {
+      name: cleanName,
+      phone: cleanPhone,
       otp,
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
 
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'FinTrack Login OTP',
-      text: `Your FinTrack login OTP is ${otp}. It is valid for 5 minutes.`,
+    /*
+     * Send email using Resend API
+     */
+    const resendResponse = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      },
+      body: JSON.stringify({
+        from: 'FinTrack <onboarding@resend.dev>',
+        to: [cleanEmail],
+        subject: 'FinTrack Login OTP',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>FinTrack Login Verification</h2>
+
+            <p>Hello ${cleanName},</p>
+
+            <p>Your FinTrack login OTP is:</p>
+
+            <h1 style="letter-spacing: 6px;">
+              ${otp}
+            </h1>
+
+            <p>
+              This OTP is valid for <strong>5 minutes</strong>.
+            </p>
+
+            <p>
+              If you did not request this OTP, you can safely ignore this email.
+            </p>
+
+            <br>
+
+            <p>Regards,<br>FinTrack</p>
+          </div>
+        `,
+      }),
     });
 
-    console.log(`[auth] OTP sent to ${email}`);
+    const resendData = await resendResponse.json();
+
+    if (!resendResponse.ok) {
+      console.error('[auth] Resend API error:', resendData);
+
+      // Remove OTP if email was not sent
+      otpStore.delete(cleanEmail);
+
+      return res.status(500).json({
+        success: false,
+        message: resendData.message || 'Failed to send OTP email.',
+      });
+    }
+
+    console.log(`[auth] OTP sent to ${cleanEmail}`);
 
     return res.json({
       success: true,
@@ -72,6 +111,7 @@ router.post('/send-otp', async (req, res) => {
   }
 });
 
+
 /*
  * VERIFY OTP
  */
@@ -86,7 +126,10 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    const stored = otpStore.get(email);
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPhone = phone.trim();
+
+    const stored = otpStore.get(cleanEmail);
 
     if (!stored) {
       return res.status(400).json({
@@ -95,8 +138,9 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
+    // Check expiration
     if (Date.now() > stored.expiresAt) {
-      otpStore.delete(email);
+      otpStore.delete(cleanEmail);
 
       return res.status(400).json({
         success: false,
@@ -104,14 +148,16 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    if (stored.phone !== phone) {
+    // Check phone
+    if (stored.phone !== cleanPhone) {
       return res.status(400).json({
         success: false,
         message: 'Phone number does not match.',
       });
     }
 
-    if (stored.otp !== otp) {
+    // Check OTP
+    if (stored.otp !== otp.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Invalid OTP.',
@@ -123,11 +169,12 @@ router.post('/verify-otp', (req, res) => {
      */
     const user = createUser(
       stored.name,
-      email,
+      cleanEmail,
       stored.phone
     );
 
-    otpStore.delete(email);
+    // OTP can no longer be reused
+    otpStore.delete(cleanEmail);
 
     return res.json({
       success: true,
@@ -149,5 +196,6 @@ router.post('/verify-otp', (req, res) => {
     });
   }
 });
+
 
 module.exports = router;
