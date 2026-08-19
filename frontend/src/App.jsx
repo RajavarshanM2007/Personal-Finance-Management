@@ -11,7 +11,6 @@ import Settings from "./pages/Settings";
 import "./App.css";
 
 const API = "https://personal-finance-management-production-7a21.up.railway.app/api";
-
 function getInitialPage() {
   const page = window.location.hash.slice(1);
 
@@ -119,9 +118,17 @@ function App() {
   // ─────────────────────────────────────────────
 
   const authHeaders = () => {
-    if (!user?.id) {
-      return {};
-    }
+  const userId = user?.id ?? user?.user_id ?? user?.userId;
+
+  if (!userId) {
+    console.error("No user ID found:", user);
+    return {};
+  }
+
+  return {
+    "x-user-id": String(userId),
+  };
+};
 
     return {
       "x-user-id": String(user.id),
