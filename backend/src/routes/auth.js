@@ -8,7 +8,7 @@ const router = Router();
 const otpStore = new Map();
 
 /*
- * Generate 6-digit OTP
+ * Generate a random 6-digit OTP
  */
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -28,9 +28,23 @@ router.post('/send-otp', async (req, res) => {
       });
     }
 
-    const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = phone.trim();
+    const cleanName = String(name).trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = String(phone).trim();
+
+    if (!cleanEmail.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Enter a valid email address.',
+      });
+    }
+
+    if (!cleanPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Enter a valid phone number.',
+      });
+    }
 
     const otp = generateOTP();
 
@@ -40,9 +54,52 @@ router.post('/send-otp', async (req, res) => {
     otpStore.set(cleanEmail, {
       name: cleanName,
       phone: cleanPhone,
-      otp,
+      otp: otp,
       expiresAt: Date.now() + 5 * 60 * 1000,
     });
+
+    /*
+     * DIAGNOSTIC CHECK
+     * This does NOT print the actual API key.
+     */
+    console.log(
+      '[auth] BREVO_API_KEY loaded:',
+      !!process.env.BREVO_API_KEY,
+      'length:',
+      process.env.BREVO_API_KEY
+        ? process.env.BREVO_API_KEY.length
+        : 0
+    );
+
+    console.log(
+      '[auth] BREVO_SENDER_EMAIL:',
+      process.env.BREVO_SENDER_EMAIL || 'MISSING'
+    );
+
+    /*
+     * Check Brevo configuration
+     */
+    if (!process.env.BREVO_API_KEY) {
+      console.error('[auth] BREVO_API_KEY is missing');
+
+      otpStore.delete(cleanEmail);
+
+      return res.status(500).json({
+        success: false,
+        message: 'Email service is not configured.',
+      });
+    }
+
+    if (!process.env.BREVO_SENDER_EMAIL) {
+      console.error('[auth] BREVO_SENDER_EMAIL is missing');
+
+      otpStore.delete(cleanEmail);
+
+      return res.status(500).json({
+        success: false,
+        message: 'Email sender is not configured.',
+      });
+    }
 
     /*
      * Send email using Brevo HTTP API
@@ -73,74 +130,120 @@ router.post('/send-otp', async (req, res) => {
           subject: 'FinTrack Login OTP',
 
           htmlContent: `
-            <div style="
-              font-family: Arial, sans-serif;
-              max-width: 600px;
-              margin: auto;
-              padding: 30px;
-              border: 1px solid #ddd;
-              border-radius: 12px;
-            ">
-
-              <h2 style="color: #222;">
-                FinTrack Login Verification
-              </h2>
-
-              <p>Hello ${cleanName},</p>
-
-              <p>
-                Your FinTrack login OTP is:
-              </p>
-
-              <h1 style="
-                letter-spacing: 8px;
-                font-size: 36px;
+            <!DOCTYPE html>
+            <html>
+              <body style="
+                margin: 0;
+                padding: 30px;
+                background: #f5f5f5;
+                font-family: Arial, sans-serif;
               ">
-                ${otp}
-              </h1>
 
-              <p>
-                This OTP is valid for
-                <strong>5 minutes</strong>.
-              </p>
+                <div style="
+                  max-width: 550px;
+                  margin: auto;
+                  background: white;
+                  padding: 30px;
+                  border-radius: 12px;
+                  border: 1px solid #ddd;
+                ">
 
-              <p>
-                If you did not request this OTP,
-                you can safely ignore this email.
-              </p>
+                  <h2 style="margin-top: 0;">
+                    FinTrack Login Verification
+                  </h2>
 
-              <br>
+                  <p>
+                    Hello ${cleanName},
+                  </p>
 
-              <p>
-                Regards,<br>
-                <strong>FinTrack</strong>
-              </p>
+                  <p>
+                    Your FinTrack login verification code is:
+                  </p>
 
-            </div>
+                  <div style="
+                    text-align: center;
+                    margin: 30px 0;
+                  ">
+
+                    <span style="
+                      display: inline-block;
+                      padding: 15px 25px;
+                      background: #f1f1f1;
+                      border-radius: 8px;
+                      font-size: 32px;
+                      font-weight: bold;
+                      letter-spacing: 8px;
+                    ">
+                      ${otp}
+                    </span>
+
+                  </div>
+
+                  <p>
+                    This OTP is valid for
+                    <strong>5 minutes</strong>.
+                  </p>
+
+                  <p>
+                    If you did not request this OTP,
+                    you can safely ignore this email.
+                  </p>
+
+                  <br>
+
+                  <p>
+                    Regards,<br>
+                    <strong>FinTrack</strong>
+                  </p>
+
+                </div>
+
+              </body>
+            </html>
           `,
         }),
       }
     );
 
-    const brevoData = await brevoResponse.json();
+    let brevoData = {};
+
+    try {
+      brevoData = await brevoResponse.json();
+    } catch {
+      brevoData = {};
+    }
 
     /*
-     * Brevo rejected the email
+     * Brevo rejected the request
      */
     if (!brevoResponse.ok) {
-      console.error('[auth] Brevo API error:', brevoData);
+      console.error(
+        '[auth] Brevo API error:',
+        brevoResponse.status,
+        brevoData
+      );
 
       otpStore.delete(cleanEmail);
 
       return res.status(500).json({
         success: false,
         message:
-          brevoData.message || 'Failed to send OTP email.',
+          brevoData.message ||
+          'Brevo failed to send the OTP email.',
       });
     }
 
+    /*
+     * Email accepted by Brevo
+     */
     console.log(
       `[auth] OTP sent successfully to ${cleanEmail}`
+    );
+
+    console.log(
+      `[auth] Brevo message ID: ${
+        brevoData.messageId || 'received'
+      }`
     );
 
     return res.json({
@@ -172,15 +275,12 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPhone = phone.trim();
-    const cleanOTP = otp.trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPhone = String(phone).trim();
+    const cleanOTP = String(otp).trim();
 
     const stored = otpStore.get(cleanEmail);
 
-    /*
-     * OTP does not exist
-     */
     if (!stored) {
       return res.status(400).json({
         success: false,
@@ -188,9 +288,6 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    /*
-     * OTP expired
-     */
     if (Date.now() > stored.expiresAt) {
       otpStore.delete(cleanEmail);
 
@@ -200,9 +297,6 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    /*
-     * Check phone number
-     */
     if (stored.phone !== cleanPhone) {
       return res.status(400).json({
         success: false,
@@ -210,9 +304,6 @@ router.post('/verify-otp', (req, res) => {
       });
     }
 
-    /*
-     * Check OTP
-     */
     if (stored.otp !== cleanOTP) {
       return res.status(400).json({
         success: false,
@@ -221,7 +312,8 @@ router.post('/verify-otp', (req, res) => {
     }
 
     /*
-     * Create/find actual user
+     * OTP is correct.
+     * Create/find the actual user.
      */
     const user = createUser(
       stored.name,
@@ -229,9 +321,6 @@ router.post('/verify-otp', (req, res) => {
       stored.phone
     );
 
-    /*
-     * Prevent OTP reuse
-     */
     otpStore.delete(cleanEmail);
 
     return res.json({
