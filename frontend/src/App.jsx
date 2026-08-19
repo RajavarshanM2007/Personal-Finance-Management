@@ -10,7 +10,7 @@ import Settings from "./pages/Settings";
 
 import "./App.css";
 
-const API = "http://localhost:5000/api";
+const API = "https://personal-finance-management-production-7a21.up.railway.app/api";
 
 function getInitialPage() {
   const page = window.location.hash.slice(1);
