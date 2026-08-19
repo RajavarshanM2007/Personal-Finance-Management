@@ -130,10 +130,6 @@ function App() {
   };
 };
 
-    return {
-      "x-user-id": String(user.id),
-    };
-  };
 
   // ─────────────────────────────────────────────
   // LOAD USER DATA
